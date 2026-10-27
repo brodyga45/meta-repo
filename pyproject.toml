@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meta-repo"
+version = "0.1.0"
+description = "Render repositories with embedded Python and shared memory."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+keywords = ["cli", "templates", "code-generation", "metaprogramming"]
+
+[project.scripts]
+meta-repo = "meta_repo.cli:main"
+
+[project.urls]
+Repository = "https://github.com/brodyga45/meta-repo"
+
+[tool.setuptools]
+packages = ["meta_repo"]

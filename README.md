@@ -1,0 +1,220 @@
+# meta-repo
+
+A small CLI that renders a directory tree by executing embedded Python blocks.
+All blocks share a `memory` variable. Python 3.11+, no runtime dependencies.
+
+## Why a metarepository?
+
+A metarepository is source for a repository: its files are **meta-text** that
+produces ordinary text. Python lets you extract shared entities, keep related
+definitions together, and render them into JSON, YAML, or other formats through
+functions, objects, loops, and shared `memory`. The output stays ordinary files.
+
+The central idea is **verifiable refactoring of text**. You can substantially
+reorganize a metarepository, extract abstractions, and remove duplication,
+then build the old and new versions and verify that they produce exactly the
+same repository: the same paths and output bytes. A change in representation
+can therefore be distinguished from an intentional change in generated behavior.
+This equivalence check depends on reproducibility, which is why rendering
+should avoid external effects and implicit inputs.
+
+## Install
+
+```sh
+pipx install git+https://github.com/brodyga45/meta-repo.git
+```
+
+Or install from a local clone:
+
+```sh
+python3 -m pip install .
+```
+
+## Run
+
+```sh
+meta-repo SOURCE DESTINATION
+meta-repo SOURCE DESTINATION --descending
+meta-repo --help
+```
+
+`DESTINATION` must be a new directory outside `SOURCE`. The source tree is
+unchanged, and the output tree is published only after processing succeeds.
+You can also run the CLI as `python3 -m meta_repo`.
+
+## Meta-files
+
+A meta-file starts with exactly this first-line format:
+
+```text
+!#meta[A][B][n]
+```
+
+`A` and `B` are opening and closing delimiters; `n` is an integer priority.
+The delimiters cannot contain square brackets or line breaks. They must be
+nonempty, distinct, and neither can be a prefix of the other.
+
+For example, `00-init.txt`:
+
+```text
+!#meta[<py>][</py>][0]
+<py>
+memory["name"] = "world"
+memory["items"] = ["alpha", "beta"]
+return ""
+</py>
+```
+
+And `10-report.txt`:
+
+```text
+!#meta[<py>][</py>][10]
+Hello, <py>return memory["name"]</py>!
+<py>
+return "\n".join(f"- {item}" for item in memory["items"])
+</py>
+```
+
+The second output file contains:
+
+```text
+Hello, world!
+- alpha
+- beta
+```
+
+Each block must `return` a string. That string replaces the entire block,
+including its delimiters. The meta-file header is removed as well.
+A first line that does not match the header format is ordinary content.
+
+## Directory parameters
+
+A file named exactly `!#meta` can specify parameters for its directory:
+
+```text
+[<py>][</py>][5]
+```
+
+Files without their own header use these delimiters and priority. A file's
+own header overrides all directory parameters.
+
+Alternatively, `[5]` sets only the priority; files without a header remain
+ordinary files. Missing or unrecognized directory parameters provide no
+defaults. Parameters apply only to immediate files, never to child directories.
+All files named `!#meta` are omitted from the output.
+
+## Execution order
+
+At each level, files run first, followed by child directories. Each child
+directory finishes before the next sibling starts. Files and directories
+are sorted separately:
+
+1. Lower priority first by default; higher priority first with `--descending`.
+2. Missing priority always comes last, in either direction.
+3. Equal priorities are ordered lexicographically by name.
+
+A directory's priority comes from its own `!#meta` file. An absent directory
+configuration does not prevent traversal.
+
+For example, keep definitions and generated configurations in sibling directories:
+
+```text
+source/
+  entities/
+    !#meta             # [0]
+    service.txt        # own meta-header; stores memory["service"]
+  configuration/
+    !#meta             # [<py>][</py>][10]
+    service.json
+    service.yaml
+```
+
+With the default ascending order, `entities/` finishes before `configuration/`.
+Its meta-file might define `memory["service"] = {"name": "api", "port": 8080}`
+and return `""`. The later files render this same value differently, using
+`json.dumps` for JSON and appropriate text formatting for YAML. Directory
+priorities order siblings; they never move a child directory ahead of files
+in its parent. In particular, root-level consumers run before all child directories.
+
+## Python and memory
+
+`memory` starts as `{}` and is shared across all blocks and files. It may
+contain JSON-style data, functions, instances, iterators, or any other Python
+objects. A block may also replace `memory` entirely.
+
+Blocks execute through `exec` inside a function with `global memory`.
+Use `return` for output and `memory` for cross-block state. Ordinary local
+variables do not carry over to the next block. Common indentation is removed
+with `textwrap.dedent`. Python runs with the current process's permissions;
+this is not a sandbox. Process only repositories whose code you trust.
+
+Nested blocks run inside out: the inner result becomes part of the outer
+Python source before it is compiled. Use `repr` when generating a string literal:
+
+```text
+<py>return "Nested: " + <py>return repr(memory["name"])</py></py>
+```
+
+Delimiters are reserved even inside Python string literals and comments.
+Choose delimiters that do not otherwise occur in the code. Generated output
+is never parsed again.
+
+Meta-files use UTF-8. Ordinary files are copied byte for byte, including
+binary files; file modes are preserved. Symbolic links are copied without
+following or rendering their contents. Processing errors report the source
+file and block location and exit with a nonzero status.
+
+## Reproducible repositories
+
+Treat rendering as a reproducible transformation of the source repository and
+explicit initial memory into an output repository. Prefer pure functions that
+produce text. Keep deliberate cross-file state in `memory`, and make its
+initialization and execution order explicit. The same inputs and supported
+Python environment should produce the same output bytes.
+
+For a representation-only refactor, build both revisions into separate new
+directories and compare them:
+
+```sh
+meta-repo source-before output-before
+meta-repo source-after output-after
+git diff --no-index --exit-code output-before output-after
+```
+
+No diff and exit status `0` establish output equivalence for those inputs.
+Keep the same Python environment, initial memory, and priority direction.
+Compare the complete output tree, not only selected files. If a refactor is
+intended to change generated behavior, review that output diff explicitly
+instead of expecting equivalence. With multiple supported input configurations,
+repeat the comparison for each one; one comparison is not a proof for every input.
+
+- Use loops, comprehensions, functions, and objects to describe and format data.
+- Do not derive output from environment variables, the current directory,
+  wall-clock time, randomness, network responses, or machine-specific paths.
+- Do not hardcode filesystem writes, shell commands, deployments, or other
+  external side effects into blocks. Return text and let `meta-repo` write it.
+- Avoid emitting object representations containing memory addresses; render
+  explicit fields instead. Sort collections when their source order is not fixed.
+
+Reading another file is an exception: keep that file among the repository's
+explicit inputs, use UTF-8 or another explicit encoding, and resolve its path
+relative to the current source file, for example
+`Path(__file__).parent / "data.json"`, rather than the caller's working directory.
+Do not rely on mutable files outside the repository or on the partially generated
+output tree. These are authoring conventions, not restrictions enforced by a sandbox.
+
+## Python API
+
+```python
+from meta_repo import process_repository
+
+final_memory = process_repository(
+    "source",
+    "output",
+    ascending=True,
+    memory={"name": "Python"},
+)
+```
+
+The function returns the final shared memory. Omit `memory` for a fresh `{}`;
+an explicit `memory=None` starts with `None`.
