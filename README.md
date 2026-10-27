@@ -58,6 +58,11 @@ A meta-file starts with exactly this first-line format:
 The delimiters cannot contain square brackets or line breaks. They must be
 nonempty, distinct, and neither can be a prefix of the other.
 
+Delimiters are chosen per file, so meta-text can coexist with XML, JSON, YAML,
+any programming language, or other text. Choose markers that do not conflict
+with that particular file's contents; even files of the same format can use
+different delimiters when convenient.
+
 For example, `00-init.txt`:
 
 ```text
