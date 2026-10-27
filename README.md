@@ -200,12 +200,39 @@ repeat the comparison for each one; one comparison is not a proof for every inpu
 - Avoid emitting object representations containing memory addresses; render
   explicit fields instead. Sort collections when their source order is not fixed.
 
-Reading another file is an exception: keep that file among the repository's
-explicit inputs, use UTF-8 or another explicit encoding, and resolve its path
-relative to the current source file, for example
-`Path(__file__).parent / "data.json"`, rather than the caller's working directory.
-Do not rely on mutable files outside the repository or on the partially generated
-output tree. These are authoring conventions, not restrictions enforced by a sandbox.
+### Reading repository data
+
+Read-only access to source files inside the repository is a normal, supported
+authoring pattern. A parent-level meta-file can load a directory of JSON files
+into `memory` for later consumers. This can be simpler than adding a meta-header
+and initialization code to every data file:
+
+```python
+from pathlib import Path
+import json
+
+data_directory = Path(__file__).parent / "data"
+memory["records"] = {
+    path.stem: json.loads(path.read_text(encoding="utf-8"))
+    for path in sorted(data_directory.glob("*.json"))
+}
+return ""
+```
+
+These files are explicit source inputs. They may live in child directories;
+reading their original contents does not require waiting for those directories
+to be rendered. Resolve paths relative to the current source file and use an
+explicit encoding. Keep the inputs unchanged throughout a build.
+
+The `sorted(...)` above makes this block's record insertion order reproducible:
+Python filesystem enumeration does not promise lexical order. Explicit ordering
+is needed only when the enumeration order affects the result. This is separate
+from `meta-repo`'s own traversal, whose priority and name ordering is already defined.
+
+Blocks should only read source data, never create, modify, or delete files.
+Return output text and leave all output writes to `meta-repo`. Do not read mutable
+files outside the repository or depend on the partially generated output tree.
+These are authoring conventions, not restrictions enforced by a sandbox.
 
 ## Python API
 
