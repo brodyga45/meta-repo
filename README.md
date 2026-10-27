@@ -6,17 +6,21 @@ All blocks share a `memory` variable. Python 3.11+, no runtime dependencies.
 ## Why a metarepository?
 
 A metarepository is source for a repository: its files are **meta-text** that
-produces ordinary text. Python lets you extract shared entities, keep related
-definitions together, and render them into JSON, YAML, or other formats through
-functions, objects, loops, and shared `memory`. The output stays ordinary files.
+produces ordinary text. It lets the source follow **logical relationships**
+rather than the formats of generated files: define a shared entity once, keep
+its related configuration together, and render its different representations
+wherever JSON, YAML, or other files need them. Python provides objects,
+functions, loops, and composition; directory priorities and shared `memory`
+make definitions available to later consumers. The output stays ordinary files.
 
-The central idea is **verifiable refactoring of text**. You can substantially
-reorganize a metarepository, extract abstractions, and remove duplication,
-then build the old and new versions and verify that they produce exactly the
-same repository: the same paths and output bytes. A change in representation
-can therefore be distinguished from an intentional change in generated behavior.
-This equivalence check depends on reproducibility, which is why rendering
-should avoid external effects and implicit inputs.
+This organization goes hand in hand with **verifiable refactoring of text**.
+You can substantially reorganize a metarepository, extract entities and
+abstractions, and remove duplication, then build the old and new versions and
+verify that they produce exactly the same repository: the same paths and
+output bytes. Together, logical organization and reproducibility let you
+improve how a repository is expressed while checking that its result is
+unchanged, separately from intentional changes in generated behavior. This
+equivalence check is why rendering should avoid external effects and implicit inputs.
 
 ## Install
 
