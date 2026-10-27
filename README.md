@@ -198,7 +198,7 @@ repeat the comparison for each one; one comparison is not a proof for every inpu
 - Do not hardcode filesystem writes, shell commands, deployments, or other
   external side effects into blocks. Return text and let `meta-repo` write it.
 - Avoid emitting object representations containing memory addresses; render
-  explicit fields instead. Sort collections when their source order is not fixed.
+  explicit fields instead.
 
 ### Reading repository data
 
@@ -214,7 +214,7 @@ import json
 data_directory = Path(__file__).parent / "data"
 memory["records"] = {
     path.stem: json.loads(path.read_text(encoding="utf-8"))
-    for path in sorted(data_directory.glob("*.json"))
+    for path in data_directory.glob("*.json")
 }
 return ""
 ```
@@ -223,11 +223,6 @@ These files are explicit source inputs. They may live in child directories;
 reading their original contents does not require waiting for those directories
 to be rendered. Resolve paths relative to the current source file and use an
 explicit encoding. Keep the inputs unchanged throughout a build.
-
-The `sorted(...)` above makes this block's record insertion order reproducible:
-Python filesystem enumeration does not promise lexical order. Explicit ordering
-is needed only when the enumeration order affects the result. This is separate
-from `meta-repo`'s own traversal, whose priority and name ordering is already defined.
 
 Blocks should only read source data, never create, modify, or delete files.
 Return output text and leave all output writes to `meta-repo`. Do not read mutable
