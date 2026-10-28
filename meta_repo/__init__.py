@@ -2,5 +2,5 @@
 
 from .processor import ProcessingError, process_repository
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["ProcessingError", "process_repository"]

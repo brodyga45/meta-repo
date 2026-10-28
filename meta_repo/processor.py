@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import os
 import re
@@ -29,6 +29,7 @@ class ProcessingError(Exception):
 class Settings:
     delimiters: tuple[str, str] | None = None
     priority: int | None = None
+    delete: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,20 +42,33 @@ def _settings(match: re.Match[str]) -> Settings:
     return Settings((match[1], match[2]), int(match[3]))
 
 
+def _is_delete(line: bytes, settings: Settings) -> bool:
+    if settings.delimiters is None:
+        return False
+    opening, closing = settings.delimiters
+    return line.removesuffix(b"\r") == f"{opening}DELETE{closing}".encode("utf-8")
+
+
 def folder_settings(directory: Path) -> Settings:
     service = directory / SERVICE_FILE
     if service.is_symlink() or not service.is_file():
         return Settings()
     header, _, remainder = service.read_bytes().partition(b"\n")
-    if remainder:
-        return Settings()
     try:
         text = header.removesuffix(b"\r").decode("utf-8")
     except UnicodeDecodeError:
         return Settings()
     full = _FOLDER.fullmatch(text)
     if full:
-        return _settings(full)
+        settings = _settings(full)
+        if not remainder:
+            return settings
+        directive, _, extra = remainder.partition(b"\n")
+        if not extra and _is_delete(directive, settings):
+            return replace(settings, delete=True)
+        return Settings()
+    if remainder:
+        return Settings()
     priority = _PRIORITY.fullmatch(text)
     return Settings(priority=int(priority[1])) if priority else Settings()
 
@@ -67,8 +81,12 @@ def file_settings(data: bytes, defaults: Settings) -> tuple[Settings, bytes, int
     except UnicodeDecodeError:
         match = None
     if match:
-        return _settings(match), body, 2
-    return defaults, data, 1
+        settings = _settings(match)
+        directive, _, rest = body.partition(b"\n")
+        if _is_delete(directive, settings):
+            return replace(settings, delete=True), rest, 3
+        return settings, body, 2
+    return replace(defaults, delete=False), data, 1
 
 
 def parse_text(
@@ -158,9 +176,14 @@ def _order(name: str, priority: int | None, ascending: bool) -> tuple[bool, int,
     return priority is None, number if ascending else -number, name
 
 
-def _process_directory(source: Path, output: Path, context: Context, ascending: bool) -> None:
-    output.mkdir()
+def _process_directory(
+    source: Path, output: Path | None, context: Context, ascending: bool
+) -> None:
     defaults = folder_settings(source)
+    if defaults.delete:
+        output = None
+    if output is not None:
+        output.mkdir()
     files = []
     directories = []
     for entry in source.iterdir():
@@ -179,9 +202,10 @@ def _process_directory(source: Path, output: Path, context: Context, ascending: 
     files.sort(key=lambda item: _order(item[0].name, item[1].priority, ascending))
     directories.sort(key=lambda item: _order(item[0].name, item[1], ascending))
     for entry, settings, body, first_line in files:
-        target = output / entry.name
+        target = output / entry.name if output is not None and not settings.delete else None
         if entry.is_symlink():
-            target.symlink_to(os.readlink(entry))
+            if target is not None:
+                target.symlink_to(os.readlink(entry))
             continue
         if settings.delimiters is not None:
             try:
@@ -190,11 +214,14 @@ def _process_directory(source: Path, output: Path, context: Context, ascending: 
                 raise ProcessingError(f"{entry}: meta-text must be UTF-8") from error
             parts = parse_text(text, settings.delimiters, entry, first_line)
             body = context.render(parts, entry).encode("utf-8")
-        target.write_bytes(body)
-        shutil.copymode(entry, target)
+        if target is not None:
+            target.write_bytes(body)
+            shutil.copymode(entry, target)
 
     for entry, _ in directories:
-        _process_directory(entry, output / entry.name, context, ascending)
+        _process_directory(
+            entry, output / entry.name if output is not None else None, context, ascending
+        )
 
 
 def process_repository(
@@ -220,5 +247,7 @@ def process_repository(
     with tempfile.TemporaryDirectory(prefix=".metarepo-", dir=destination.parent) as temporary:
         staged = Path(temporary) / "output"
         _process_directory(source, staged, context, ascending)
+        # A deleted source root still publishes an empty destination directory.
+        staged.mkdir(exist_ok=True)
         staged.rename(destination)
     return context.memory

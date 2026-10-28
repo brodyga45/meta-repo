@@ -112,6 +112,66 @@ ordinary files. Missing or unrecognized directory parameters provide no
 defaults. Parameters apply only to immediate files, never to child directories.
 All files named `!#meta` are omitted from the output.
 
+## Excluding files and directories with DELETE
+
+To execute a meta-file but omit it from the output, put exactly `ADELETEB`
+on its second line, using the delimiters from its own first-line header:
+
+```text
+!#meta[<py>][</py>][0]
+<py>DELETE</py>
+<py>
+memory["service"] = {"name": "api", "port": 8080}
+return ""
+</py>
+```
+
+The remaining body executes normally and can prepare `memory` for later files.
+The header and DELETE line are metadata; neither is executed as Python.
+
+To omit an entire directory, put the directive on the second line of its
+`!#meta` file, using that file's directory parameters:
+
+```text
+[<py>][</py>][0]
+<py>DELETE</py>
+```
+
+All files and descendants still execute in the usual priority order, sharing
+`memory`, but the directory and everything inside it are absent from the output.
+Errors inside excluded content still fail the build. A DELETE directive in the
+source root's `!#meta` produces an empty destination directory after execution.
+The source repository is always unchanged.
+
+For example, keep developer-facing entities and parameters in `Control/`:
+
+```text
+source/
+  Control/
+    !#meta             # [<py>][</py>][0], then <py>DELETE</py>
+    service.py         # Python block storing memory["service"]
+  configuration/
+    !#meta             # [<py>][</py>][10]
+    service.json       # renders memory["service"] as JSON
+    service.yaml       # renders the same entity as YAML
+```
+
+With ascending priorities, `Control/` runs before `configuration/`. Its files
+can describe entities in whatever representation is convenient for the author,
+then store them in shared memory for other files to use. Only `configuration/`
+appears in the output. In `service.py`, use a delimited block such as
+`<py>memory["service"] = {"name": "api", "port": 8080}; return ""</py>`;
+the filename extension itself does not execute Python.
+
+The directive is case-sensitive, with no extra spaces or text, and must occupy
+the entire second line. LF and CRLF line endings are supported, including a
+second line without a final newline. It requires a file's own valid meta-header
+or full directory parameters `[A][B][n]`; priority-only `[n]` does not define
+delimiters. Directory service files otherwise keep their single-line format:
+only the optional DELETE line may follow the parameters. The directive is not
+inherited by child directories or recognized in ordinary files, later lines,
+or generated output.
+
 ## Execution order
 
 At each level, files run first, followed by child directories. Each child
